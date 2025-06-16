@@ -109,10 +109,6 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 This project is open source and available under the [MIT License](LICENSE).
 
-## 👨‍💻 Author
-
-Created by [Aravinda Nugonda](https://github.com/aravindanugonda)
-
 ## 🚀 Deployment
 
 For deployment on Streamlit Cloud or other platforms:
