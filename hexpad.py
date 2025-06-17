@@ -22,7 +22,17 @@ def replace_non_printable(text):
 
 def generate_ruler(line_length):
     numbers_line = [' '] * line_length
-    ruler_line = ('····+····|' * ((line_length // 10) + 2))[:line_length]
+    ruler_line = ['·'] * line_length
+    
+    # Create ruler with different markers for different positions
+    for pos in range(line_length):
+        col_num = pos + 1  # 1-based position
+        if col_num % 10 == 0:
+            ruler_line[pos] = '|'  # Every 10th position
+        elif col_num % 5 == 0:
+            ruler_line[pos] = '+'  # Every 5th position
+        else:
+            ruler_line[pos] = '·'  # Regular positions
     
     # Place position numbers at 1-based intervals (1, 11, 21, 31, etc.)
     for pos in range(1, line_length + 1, 10):
@@ -39,7 +49,47 @@ def generate_ruler(line_length):
             if 0 <= write_pos < line_length:
                 numbers_line[write_pos] = c
     
-    return ''.join(numbers_line), ruler_line
+    return ''.join(numbers_line), ''.join(ruler_line)
+
+def generate_html_ruler(line_length):
+    """Generate HTML-formatted ruler with colored markers for better visualization"""
+    numbers_line = []
+    ruler_line = []
+    
+    # Generate number line
+    numbers_str = [' '] * line_length
+    for pos in range(1, line_length + 1, 10):
+        num_str = str(pos)
+        ruler_pos = pos - 1
+        start = max(0, ruler_pos - len(num_str) + 1)
+        for i, c in enumerate(num_str):
+            write_pos = start + i
+            if 0 <= write_pos < line_length:
+                numbers_str[write_pos] = c
+    
+    # Create colored number line
+    for i, char in enumerate(numbers_str):
+        col_num = i + 1
+        if char != ' ':
+            numbers_line.append(f'<span class="ruler-number-marker">{char}</span>')
+        elif col_num % 10 == 0:
+            numbers_line.append('<span class="ruler-10th"> </span>')
+        elif col_num % 5 == 0:
+            numbers_line.append('<span class="ruler-5th"> </span>')
+        else:
+            numbers_line.append('<span class="ruler-regular"> </span>')
+    
+    # Create colored ruler line
+    for pos in range(line_length):
+        col_num = pos + 1
+        if col_num % 10 == 0:
+            ruler_line.append('<span class="ruler-10th">|</span>')
+        elif col_num % 5 == 0:
+            ruler_line.append('<span class="ruler-5th">+</span>')
+        else:
+            ruler_line.append('<span class="ruler-regular">·</span>')
+    
+    return ''.join(numbers_line), ''.join(ruler_line)
 
 def generate_hex_display(original_text, encoding_mode):
     hex_data = []
@@ -143,6 +193,45 @@ def main():
         border-radius: 8px;
         margin-top: 10px;
     }
+    .ruler-number-marker {
+        color: #1f77b4;
+        font-weight: bold;
+        background: #fff3cd;
+        padding: 0 1px;
+        border-radius: 2px;
+    }
+    .ruler-10th {
+        color: #d62728;
+        font-weight: bold;
+        font-size: 1.1em;
+    }
+    .ruler-5th {
+        color: #2ca02c;
+        font-weight: bold;
+    }
+    .ruler-regular {
+        color: #666;
+    }
+    .ruler-container {
+        font-family: 'Courier New', monospace;
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        border: 1px solid #dee2e6;
+        line-height: 1.3;
+    }
+    .data-line {
+        font-family: 'Courier New', monospace;
+        background: #ffffff;
+        padding: 2px 10px;
+        margin: 1px 0;
+        border-left: 3px solid transparent;
+    }
+    .data-line:hover {
+        background: #f8f9fa;
+        border-left: 3px solid #007bff;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -219,6 +308,7 @@ def main():
         
         processed_text = replace_non_printable(text)
         ruler_numbers, ruler_line = generate_ruler(max_line_length)
+        html_ruler_numbers, html_ruler_line = generate_html_ruler(max_line_length)
         hex_data = generate_hex_display(text, encoding_mode)
         processed_lines = processed_text.splitlines()  # Changed from split('\\n') to splitlines()
 
@@ -229,76 +319,76 @@ def main():
 
         st.markdown("#### 📝 Analysis Output")
         
-        # Prepare the display content
-        display_lines = []
-        
-        # Add ruler
-        display_lines.append(ruler_numbers)
-        display_lines.append(ruler_line)
-        display_lines.append("")  # Empty line after ruler
-        
-        # Add data lines
+        # Display each line with its own ruler for perfect alignment
         for i, line_content in enumerate(processed_lines):
-            # Add line number and text
-            display_lines.append(f"Line {i+1}:")
-            display_lines.append(fit_line(line_content))
+            line_num = i + 1
+            fitted_line = fit_line(line_content)
             
-            if i < len(hex_data):
-                hex_h, hex_l = hex_data[i]
-                display_lines.append("Hex:")
-                display_lines.append(fit_line(hex_h))
-                display_lines.append(fit_line(hex_l))
-            
-            display_lines.append("")  # Empty line between entries
-        
-        # Join with literal newlines and display
-        display_content = "\n".join(display_lines)
-        st.code(display_content, language=None)
+            # Generate ruler specifically for this line length
+            line_length = len(fitted_line)
+            if line_length > 0:
+                # Create the ruler display content with perfectly aligned labels (7 chars each)
+                ruler_display = []
+                
+                # Position numbers (every 10th position)
+                ruler_numbers = generate_ruler(line_length)[0]
+                ruler_display.append(f"Pos:    {ruler_numbers}")
+                
+                # Ruler markers with colors
+                ruler_line = generate_ruler(line_length)[1]
+                ruler_display.append(f"Cols:   {ruler_line}")
+                
+                # The actual data line - pad line number to consistent width
+                line_label = f"Line {line_num}:"
+                line_label = line_label.ljust(7)  # Ensure 7 character width
+                ruler_display.append(f"{line_label} {fitted_line}")
+                
+                # Hex data if available
+                if i < len(hex_data):
+                    hex_h, hex_l = hex_data[i]
+                    fitted_hex_h = fit_line(hex_h)
+                    fitted_hex_l = fit_line(hex_l)
+                    ruler_display.append(f"Hex H:  {fitted_hex_h}")
+                    ruler_display.append(f"Hex L:  {fitted_hex_l}")
+                
+                # Display this line's ruler and data together
+                line_content_display = "\n".join(ruler_display)
+                st.code(line_content_display, language=None)
+                
+                # Add some spacing between different lines
+                if i < len(processed_lines) - 1:
+                    st.markdown("<br>", unsafe_allow_html=True)
         
         # Download section - positioned after the analysis output
         st.markdown("---")  # Add a separator
         st.markdown("#### 📥 Export Results")
         
-        # Create output sections for download with consistent 1-based positioning
+        # Create output sections for download with improved alignment
         output_sections = []
         for i, line in enumerate(processed_lines):
             line_num = i + 1
             fitted_line = fit_line(line)
+            line_length = len(fitted_line)
             
-            # Generate the same 1-based ruler for download
-            data_ruler_numbers = [' '] * max_line_length
-            data_ruler_line = ('····+····|' * ((max_line_length // 10) + 2))[:max_line_length]
-            
-            for pos in range(1, max_line_length + 1, 10):
-                position_number = pos
-                num_str = str(position_number)
-                ruler_pos = pos - 1
-                start = max(0, ruler_pos - len(num_str) + 1)
-                for j, c in enumerate(num_str):
-                    write_pos = start + j
-                    if 0 <= write_pos < max_line_length:
-                        data_ruler_numbers[write_pos] = c
-            
-            output_sections.append(f"Line {line_num} - Data Character Positions:")
-            output_sections.append(f"{''.join(data_ruler_numbers)}")
-            output_sections.append(f"{data_ruler_line}")
-            output_sections.append("")
-            output_sections.append("Text Data:")
-            output_sections.append(f"{fitted_line}")
-            
-            if i < len(hex_data):
-                hex_h = fit_line(hex_data[i][0])
-                hex_l = fit_line(hex_data[i][1])
-                output_sections.append("")
-                output_sections.append("Hex Upper:")
-                output_sections.append(f"{hex_h}")
-                output_sections.append("")
-                output_sections.append("Hex Lower:")
-                output_sections.append(f"{hex_l}")
-            
-            output_sections.append("")
-            output_sections.append("="*50)
-            output_sections.append("")
+            if line_length > 0:
+                # Generate ruler for this specific line
+                ruler_numbers, ruler_line = generate_ruler(line_length)
+                
+                # Use consistent 7-character labels for alignment
+                line_label = f"Line {line_num}:".ljust(7)
+                
+                output_sections.append(f"=== Line {line_num} Analysis ===")
+                output_sections.append(f"Pos:    {ruler_numbers}")
+                output_sections.append(f"Cols:   {ruler_line}")
+                output_sections.append(f"{line_label} {fitted_line}")
+                
+                if i < len(hex_data):
+                    hex_h = fit_line(hex_data[i][0])
+                    hex_l = fit_line(hex_data[i][1])
+                    output_sections.append(f"Hex H:  {hex_h}")
+                    output_sections.append(f"Hex L:  {hex_l}")
+                
+                output_sections.append("")  # Empty line between sections
         
         download_lines = [
             "=== TEXT ANALYZER REPORT ===",
@@ -308,9 +398,10 @@ def main():
             f"Total Characters: {len(text)}",
             "",
             "LEGEND:",
-            "· = Space | → = Tab | ¶ = Newline | ↴ = Carriage Return",
+            "Position Ruler: . = regular | + = every 5th | | = every 10th",
+            "Numbers show column positions (1-based indexing)",
+            "Special chars: · = Space | → = Tab | ¶ = Newline | ↴ = CR",
             "Actual periods remain as '.' - Hex value 2E",
-            "Control chars shown as Unicode symbols",
             "",
             "=== ANALYSIS OUTPUT ===",
             ""
