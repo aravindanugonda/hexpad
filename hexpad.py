@@ -311,6 +311,12 @@ def main():
         html_ruler_numbers, html_ruler_line = generate_html_ruler(max_line_length)
         hex_data = generate_hex_display(text, encoding_mode)
         processed_lines = processed_text.splitlines()  # Changed from split('\\n') to splitlines()
+        
+        # Truncate to first 9999 lines if needed
+        if len(processed_lines) > 9999:
+            st.warning("⚠️ Input contains more than 9999 lines. Displaying first 9999 lines only.")
+            processed_lines = processed_lines[:9999]
+            hex_data = hex_data[:9999] if hex_data else []
 
         def fit_line(line_content_to_fit):
             if len(line_content_to_fit) > max_line_length:
@@ -327,29 +333,30 @@ def main():
             # Generate ruler specifically for this line length
             line_length = len(fitted_line)
             if line_length > 0:
-                # Create the ruler display content with perfectly aligned labels (7 chars each)
+                # Create the ruler display content with perfectly aligned labels
+                # Account for line numbers up to 9999 (4 digits + "Line " + ":")
                 ruler_display = []
                 
                 # Position numbers (every 10th position)
                 ruler_numbers = generate_ruler(line_length)[0]
-                ruler_display.append(f"Pos:    {ruler_numbers}")
+                ruler_display.append(f"Pos:      {ruler_numbers}")
                 
                 # Ruler markers with colors
                 ruler_line = generate_ruler(line_length)[1]
-                ruler_display.append(f"Cols:   {ruler_line}")
+                ruler_display.append(f"Cols:     {ruler_line}")
                 
-                # The actual data line - pad line number to consistent width
+                # The actual data line - format for up to 4-digit line numbers
                 line_label = f"Line {line_num}:"
-                line_label = line_label.ljust(7)  # Ensure 7 character width
-                ruler_display.append(f"{line_label} {fitted_line}")
+                line_label = line_label.ljust(10)  # "Line 9999:" = 10 characters
+                ruler_display.append(f"{line_label}{fitted_line}")
                 
                 # Hex data if available
                 if i < len(hex_data):
                     hex_h, hex_l = hex_data[i]
                     fitted_hex_h = fit_line(hex_h)
                     fitted_hex_l = fit_line(hex_l)
-                    ruler_display.append(f"Hex H:  {fitted_hex_h}")
-                    ruler_display.append(f"Hex L:  {fitted_hex_l}")
+                    ruler_display.append(f"Hex H:    {fitted_hex_h}")
+                    ruler_display.append(f"Hex L:    {fitted_hex_l}")
                 
                 # Display this line's ruler and data together
                 line_content_display = "\n".join(ruler_display)
@@ -374,19 +381,20 @@ def main():
                 # Generate ruler for this specific line
                 ruler_numbers, ruler_line = generate_ruler(line_length)
                 
-                # Use consistent 7-character labels for alignment
-                line_label = f"Line {line_num}:".ljust(7)
+                # Use consistent 10-character labels for alignment (up to Line 9999:)
+                line_label = f"Line {line_num}:"
+                line_label = line_label.ljust(10)
                 
                 output_sections.append(f"=== Line {line_num} Analysis ===")
-                output_sections.append(f"Pos:    {ruler_numbers}")
-                output_sections.append(f"Cols:   {ruler_line}")
-                output_sections.append(f"{line_label} {fitted_line}")
+                output_sections.append(f"Pos:      {ruler_numbers}")
+                output_sections.append(f"Cols:     {ruler_line}")
+                output_sections.append(f"{line_label}{fitted_line}")
                 
                 if i < len(hex_data):
                     hex_h = fit_line(hex_data[i][0])
                     hex_l = fit_line(hex_data[i][1])
-                    output_sections.append(f"Hex H:  {hex_h}")
-                    output_sections.append(f"Hex L:  {hex_l}")
+                    output_sections.append(f"Hex H:    {hex_h}")
+                    output_sections.append(f"Hex L:    {hex_l}")
                 
                 output_sections.append("")  # Empty line between sections
         
@@ -394,14 +402,16 @@ def main():
             "=== TEXT ANALYZER REPORT ===",
             f"Encoding Mode: {encoding_mode}",
             f"Line Length: {max_line_length}",
-            f"Total Lines: {len(processed_lines)}",
+            f"Total Lines Analyzed: {len(processed_lines)}",
             f"Total Characters: {len(text)}",
+            "" if len(processed_lines) <= 9999 else "NOTE: Analysis limited to first 9999 lines",
             "",
             "LEGEND:",
             "Position Ruler: . = regular | + = every 5th | | = every 10th",
             "Numbers show column positions (1-based indexing)",
             "Special chars: · = Space | → = Tab | ¶ = Newline | ↴ = CR",
             "Actual periods remain as '.' - Hex value 2E",
+            "Line numbers supported up to Line 9999:",
             "",
             "=== ANALYSIS OUTPUT ===",
             ""
