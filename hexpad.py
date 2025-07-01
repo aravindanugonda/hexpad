@@ -1,568 +1,583 @@
 import streamlit as st
-import codecs
+import io
 
-DEFAULT_TEXT = r"""1234567890-=qwertyuiop[]\asdfghjkl;'zxcvbnm,./~!@#$%^&*()_+{}|:\"<>?QWERTYUIOPASDFGHJKLZXCVBNM"""
+SAMPLE_TEXT = "1234567890-=qwertyuiop[]\\asdfghjkl;'zxcvbnm,./~!@#$%^&*()_+{}|:\"<>?QWERTYUIOPASDFGHJKLZXCVBNM"
 
-def replace_non_printable(text):
-    replaced = []
-    for char in text:
-        if char == '\t':
-            replaced.append('→')   # Tab
-        elif char == ' ':
-            replaced.append('·')   # Space
-        elif char == '\n':
-            replaced.append('¶\n') # Newline
-        elif char == '\r':
-            replaced.append('↴')   # Carriage return
-        elif ord(char) < 32:        # Control characters
-            replaced.append(chr(0x2400 + ord(char)))
-        else:
-            replaced.append(char)
-    return ''.join(replaced)
+def format_hex_line(offset, hex_bytes, ascii_chars, bytes_per_line=16):
+    """Format a line in hexdump style with spacing every 4 bytes"""
+    # Format offset as decimal (0, 16, 32, etc.)
+    offset_str = f"{offset}"
 
-def generate_ruler(line_length):
-    numbers_line = [' '] * line_length
-    ruler_line = ['·'] * line_length
+    # Calculate how many actual bytes we have
+    actual_bytes = len(hex_bytes) // 2
     
-    # Create ruler with different markers for different positions
-    for pos in range(line_length):
-        col_num = pos + 1  # 1-based position
-        if col_num % 10 == 0:
-            ruler_line[pos] = '|'  # Every 10th position
-        elif col_num % 5 == 0:
-            ruler_line[pos] = '+'  # Every 5th position
+    # Format hex bytes with spaces and extra space every 4 bytes
+    hex_parts = []
+    for i in range(0, len(hex_bytes), 2):
+        if i + 1 < len(hex_bytes):
+            hex_parts.append(hex_bytes[i:i+2])
         else:
-            ruler_line[pos] = '·'  # Regular positions
+            hex_parts.append(hex_bytes[i] + " ")
+
+    # Pad with empty spaces for missing bytes to maintain alignment
+    for i in range(actual_bytes, bytes_per_line):
+        hex_parts.append("  ")  # Two spaces for missing byte
+
+    # Add extra spacing every 4 bytes (every 4 hex pairs)
+    formatted_hex = []
+    for i, hex_pair in enumerate(hex_parts):
+        formatted_hex.append(hex_pair)
+        if (i + 1) % 4 == 0 and i + 1 < len(hex_parts):
+            formatted_hex.append(" ")  # Extra space every 4 bytes
     
-    # Place position numbers at 1-based intervals (1, 11, 21, 31, etc.)
-    for pos in range(1, line_length + 1, 10):
-        position_number = pos
-        num_str = str(position_number)
+    # Join with spaces and calculate proper padding width
+    hex_section = " ".join(formatted_hex)
+    
+    # Format ASCII section - ALWAYS pad to bytes_per_line width so it never shifts
+    ascii_section = "|" + ascii_chars.ljust(bytes_per_line) + "|"
+    
+    return f"{offset_str:<6}  {hex_section}  {ascii_section}"
+
+def char_to_printable(byte_val):
+    """Convert byte to printable ASCII character"""
+    if 32 <= byte_val <= 126:  # Printable ASCII range
+        return chr(byte_val)
+    else:
+        return "."
+
+def ebcdic_char_to_printable(byte_val):
+    """Convert EBCDIC byte to its actual character representation"""
+    # EBCDIC to ASCII mapping for cp037
+    ebcdic_to_ascii = {
+        0xF0: '0', 0xF1: '1', 0xF2: '2', 0xF3: '3', 0xF4: '4', 
+        0xF5: '5', 0xF6: '6', 0xF7: '7', 0xF8: '8', 0xF9: '9',
+        0xC1: 'A', 0xC2: 'B', 0xC3: 'C', 0xC4: 'D', 0xC5: 'E', 
+        0xC6: 'F', 0xC7: 'G', 0xC8: 'H', 0xC9: 'I', 0xD1: 'J',
+        0xD2: 'K', 0xD3: 'L', 0xD4: 'M', 0xD5: 'N', 0xD6: 'O',
+        0xD7: 'P', 0xD8: 'Q', 0xD9: 'R', 0xE2: 'S', 0xE3: 'T',
+        0xE4: 'U', 0xE5: 'V', 0xE6: 'W', 0xE7: 'X', 0xE8: 'Y',
+        0xE9: 'Z', 0x81: 'a', 0x82: 'b', 0x83: 'c', 0x84: 'd',
+        0x85: 'e', 0x86: 'f', 0x87: 'g', 0x88: 'h', 0x89: 'i',
+        0x91: 'j', 0x92: 'k', 0x93: 'l', 0x94: 'm', 0x95: 'n',
+        0x96: 'o', 0x97: 'p', 0x98: 'q', 0x99: 'r', 0xA2: 's',
+        0xA3: 't', 0xA4: 'u', 0xA5: 'v', 0xA6: 'w', 0xA7: 'x',
+        0xA8: 'y', 0xA9: 'z', 0x40: ' ', 0x4B: '.', 0x4C: '<',
+        0x4D: '(', 0x4E: '+', 0x4F: '|', 0x50: '&', 0x5A: '!',
+        0x5B: '$', 0x5C: '*', 0x5D: ')', 0x5E: ';', 0x60: '-',
+        0x61: '/', 0x6B: ',', 0x6C: '%', 0x6D: '_', 0x6E: '>',
+        0x6F: '?', 0x79: '`', 0x7A: ':', 0x7B: '#', 0x7C: '@',
+        0x7D: "'", 0x7E: '=', 0x7F: '"', 0xA1: '~', 0x90: '^',
+        0xBD: '[', 0xBF: ']', 0xC0: '{', 0xD0: '}', 0xE0: '\\',
+        0x6A: '|'
+    }
+    return ebcdic_to_ascii.get(byte_val, '.')
+
+def text_to_hexdump(text, encoding='utf-8', bytes_per_line=16):
+    """Convert text to hexdump format"""
+    # Map encoding names
+    encoding_map = {
+        'cp037 (ebcdic)': 'cp037',
+        'utf-8': 'utf-8',
+        'ascii': 'ascii',
+        'cp1252 (windows)': 'cp1252',
+        'iso-8859-1 (latin-1)': 'iso-8859-1'
+    }
+    
+    try:
+        enc = encoding_map.get(encoding.lower(), encoding.lower())
+        byte_data = text.encode(enc)
+    except UnicodeEncodeError:
+        enc = encoding_map.get(encoding.lower(), encoding.lower())
+        byte_data = text.encode(enc, errors='replace')
+    
+    lines = []
+    offset = 0
+    
+    for i in range(0, len(byte_data), bytes_per_line):
+        chunk = byte_data[i:i + bytes_per_line]
         
-        # Convert to 0-based index for ruler array
-        ruler_pos = pos - 1
+        # Convert to hex string
+        hex_bytes = ''.join(f'{b:02x}' for b in chunk)
         
-        # Place number right-aligned at the marker position
-        start = max(0, ruler_pos - len(num_str) + 1)
-        for i, c in enumerate(num_str):
-            write_pos = start + i
-            if 0 <= write_pos < line_length:
-                numbers_line[write_pos] = c
-    
-    return ''.join(numbers_line), ''.join(ruler_line)
-
-def generate_html_ruler(line_length):
-    """Generate HTML-formatted ruler with colored markers for better visualization"""
-    numbers_line = []
-    ruler_line = []
-    
-    # Generate number line
-    numbers_str = [' '] * line_length
-    for pos in range(1, line_length + 1, 10):
-        num_str = str(pos)
-        ruler_pos = pos - 1
-        start = max(0, ruler_pos - len(num_str) + 1)
-        for i, c in enumerate(num_str):
-            write_pos = start + i
-            if 0 <= write_pos < line_length:
-                numbers_str[write_pos] = c
-    
-    # Create colored number line
-    for i, char in enumerate(numbers_str):
-        col_num = i + 1
-        if char != ' ':
-            numbers_line.append(f'<span class="ruler-number-marker">{char}</span>')
-        elif col_num % 10 == 0:
-            numbers_line.append('<span class="ruler-10th"> </span>')
-        elif col_num % 5 == 0:
-            numbers_line.append('<span class="ruler-5th"> </span>')
+        # Convert to ASCII representation - use EBCDIC mapping if EBCDIC encoding
+        if encoding.lower().startswith('cp037') or 'ebcdic' in encoding.lower():
+            ascii_chars = ''.join(ebcdic_char_to_printable(b) for b in chunk)
         else:
-            numbers_line.append('<span class="ruler-regular"> </span>')
+            ascii_chars = ''.join(char_to_printable(b) for b in chunk)
+        
+        # Format the line
+        line = format_hex_line(offset, hex_bytes, ascii_chars, bytes_per_line)
+        lines.append(line)
+        
+        offset += len(chunk)
     
-    # Create colored ruler line
-    for pos in range(line_length):
-        col_num = pos + 1
-        if col_num % 10 == 0:
-            ruler_line.append('<span class="ruler-10th">|</span>')
-        elif col_num % 5 == 0:
-            ruler_line.append('<span class="ruler-5th">+</span>')
-        else:
-            ruler_line.append('<span class="ruler-regular">·</span>')
-    
-    return ''.join(numbers_line), ''.join(ruler_line)
+    return '\n'.join(lines)
 
-def generate_hex_display(original_text, encoding_mode):
-    hex_data = []
-    lines = original_text.split('\n')
+def hex_to_text(hex_input, encoding='utf-8'):
+    """Convert hex string to text"""
+    # Map encoding names
+    encoding_map = {
+        'cp037 (ebcdic)': 'cp037',
+        'utf-8': 'utf-8',
+        'ascii': 'ascii',
+        'cp1252 (windows)': 'cp1252',
+        'iso-8859-1 (latin-1)': 'iso-8859-1'
+    }
+    
+    try:
+        # Clean hex input
+        hex_clean = ''.join(hex_input.split())
+        hex_clean = ''.join(c for c in hex_clean if c in '0123456789abcdefABCDEF')
+        
+        if len(hex_clean) % 2 != 0:
+            return "Error: Hex string must have even number of characters"
+        
+        # Convert to bytes
+        byte_data = bytes.fromhex(hex_clean)
+        
+        # Convert to text
+        enc = encoding_map.get(encoding.lower(), encoding.lower())
+        return byte_data.decode(enc)
+            
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def parse_hexdump(hexdump_text):
+    """Parse hexdump output back to original text"""
+    lines = hexdump_text.strip().split('\n')
+    hex_data = ""
+    
     for line in lines:
-        upper, lower = [], []
-        if encoding_mode == 'EBCDIC':
-            try:
-                ebcdic_bytes = line.encode('cp037')
-            except UnicodeEncodeError:
-                ebcdic_bytes = line.encode('cp037', errors='replace')
-            for byte in ebcdic_bytes:
-                hex_pair = f"{byte:02X}"
-                upper.append(hex_pair[0])
-                lower.append(hex_pair[1])
-        else:
-            for c in line:
-                hex_pair = f"{ord(c):02X}"
-                upper.append(hex_pair[0])
-                lower.append(hex_pair[1])
-        hex_data.append((''.join(upper), ''.join(lower)))
+        if not line.strip():
+            continue
+            
+        # Extract hex part (skip offset, take hex section before ASCII)
+        parts = line.split('|')
+        if len(parts) >= 2:
+            hex_part = parts[0].split('  ', 1)
+            if len(hex_part) >= 2:
+                hex_section = hex_part[1].strip()
+                # Remove spaces from hex section
+                hex_data += hex_section.replace(' ', '')
+    
     return hex_data
 
 def main():
-    st.set_page_config(page_title="Text Analyzer - Hex Inspector", layout="wide")
+    st.set_page_config(page_title="Hexpad Utility", layout="wide")
     
-    # Initialize session state for input_text if not already present
-    if "input_text" not in st.session_state:
-        st.session_state.input_text = "" # Initialize with empty or DEFAULT_TEXT
-
-    # Professional styling
     st.markdown("""
     <style>
+    /* Global styling */
     .main-title {
         text-align: center;
-        color: #1f77b4;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         margin-bottom: 30px;
-        font-size: 2.5rem;
-        font-weight: 600;
+        font-size: 2.8rem;
+        font-weight: 700;
+        text-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
+    
+    /* Section headers with animated gradients */
     .section-header {
-        background: linear-gradient(90deg, #1f77b4, #ff7f0e);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
         color: white;
-        padding: 8px 16px;
-        border-radius: 8px;
-        margin: 20px 0 10px 0;
+        padding: 12px 20px;
+        border-radius: 12px;
+        margin: 25px 0 15px 0;
         font-weight: 600;
+        font-size: 1.1rem;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.2);
     }
-    .input-container {
-        background: #f8f9fa;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #dee2e6;
-        margin-bottom: 20px;
+    
+    /* Enhanced hexdump output with gradient border */
+    .hexdump-output {
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', 'Courier New', monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        color: #e8f4fd;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+        border-radius: 12px;
+        padding: 25px;
+        white-space: pre;
+        overflow-x: auto;
+        box-shadow: 0 8px 32px rgba(102, 126, 234, 0.2);
+        position: relative;
     }
-    .output-container {
-        background: #ffffff;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #dee2e6;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    
+    .hexdump-output::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
+        border-radius: 12px;
+        z-index: -1;
     }
-    .legend-box {
-        background: #e3f2fd;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #1976d2;
-        margin: 15px 0;
-        font-family: 'Courier New', monospace;
-        font-size: 14px;
-    }
+    
+    /* Metrics container with gradient background */
     .metrics-container {
         display: flex;
         justify-content: space-around;
-        margin: 15px 0;
+        margin: 20px 0;
+        gap: 15px;
+        padding: 10px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(240, 147, 251, 0.1));
+        border-radius: 15px;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
+    
+    /* Enhanced metric boxes */
     .metric-box {
         text-align: center;
-        padding: 10px;
-        background: #f0f2f6;
-        border-radius: 8px;
-        min-width: 100px;
+        padding: 15px 20px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
+        border-radius: 12px;
+        min-width: 120px;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        backdrop-filter: blur(10px);
     }
-    .sticky-ruler-section {
-        background: #e8f4f8;
-        padding: 10px 15px;
-        border-radius: 8px;
-        border-left: 4px solid #1976d2;
-        margin: 15px 0 10px 0;
-        font-weight: 600;
-        color: #1976d2;
-    }
-    .ruler-header {
-        font-size: 16px;
-        margin-bottom: 8px;
-    }
-    .scrollable-content {
-        max-height: 600px;
-        overflow-y: auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        margin-top: 10px;
-    }
-    .ruler-number-marker {
-        color: #1f77b4;
-        font-weight: bold;
-        background: #fff3cd;
-        padding: 0 1px;
-        border-radius: 2px;
-    }
-    .ruler-10th {
-        color: #d62728;
-        font-weight: bold;
-        font-size: 1.1em;
-    }
-    .ruler-5th {
-        color: #2ca02c;
-        font-weight: bold;
-    }
-    .ruler-regular {
-        color: #666;
-    }
-    .ruler-container {
-        font-family: 'Courier New', monospace;
-        background: #f8f9fa;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 10px 0;
-        border: 1px solid #dee2e6;
-        line-height: 1.3;
-    }
-    .data-line {
-        font-family: 'Courier New', monospace;
-        background: #ffffff;
-        padding: 2px 10px;
-        margin: 1px 0;
-        border-left: 3px solid transparent;
-    }
-    .data-line:hover {
-        background: #f8f9fa;
-        border-left: 3px solid #007bff;
-    }
-    </style>
-    """, unsafe_allow_html=True)
     
-    st.markdown('<h1 class="main-title">🔍 Text Analyzer - Hex Inspector</h1>', unsafe_allow_html=True)
-
-    # Sidebar controls with better organization
-    with st.sidebar:
-        st.markdown("### ⚙️ Configuration")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            max_line_length = st.number_input(
-                "Line Length", min_value=40, max_value=500, value=140, step=10
-            )
-        with col2:
-            encoding_mode = st.selectbox("Encoding", ["ASCII", "EBCDIC"])
-        
-        st.markdown("### 🎯 Actions")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📝 Load Sample", use_container_width=True):
-                st.session_state["input_text"] = DEFAULT_TEXT
-        with col2:
-            if st.button("🗑️ Clear", use_container_width=True):
-                st.session_state["input_text"] = ""
-        
-        analyze_button = st.button("🔍 Analyze Text", type="primary", use_container_width=True)
-        
-        st.markdown("### 📊 Legend")
-        st.markdown("""
-        <div class="legend-box">
-        <strong>Symbol Guide:</strong><br>
-        · = Space character<br>
-        → = Tab character<br>
-        ¶ = Newline character<br>
-        ↴ = Carriage return<br>
-        Control chars shown as Unicode symbols
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Input section with professional styling
-    st.markdown('<div class="section-header">📝 Input Text</div>', unsafe_allow_html=True)
-    
-    text = st.text_area(
-        label="Text input area for analysis",  # Descriptive label for accessibility
-        label_visibility="hidden",  # Hide the label but keep it accessible
-        height=200,
-        key="input_text",
-        placeholder="Paste or type your text here for analysis...",
-        help="Enter text to analyze its printable characters and hex representation"
-    )
-    
-    # Show input metrics
-    if text:
-        lines_count = len(text.split('\n'))
-        chars_count = len(text)
-        st.markdown(f"""
-        <div class="metrics-container">
-            <div class="metric-box">
-                <strong>{lines_count}</strong><br>Lines
-            </div>
-            <div class="metric-box">
-                <strong>{chars_count}</strong><br>Characters
-            </div>
-            <div class="metric-box">
-                <strong>{max_line_length}</strong><br>Max Width
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Output section
-    if analyze_button and text:
-        st.markdown('<div class="section-header">📊 Analysis Results</div>', unsafe_allow_html=True)
-        
-        processed_text = replace_non_printable(text)
-        ruler_numbers, ruler_line = generate_ruler(max_line_length)
-        html_ruler_numbers, html_ruler_line = generate_html_ruler(max_line_length)
-        hex_data = generate_hex_display(text, encoding_mode)
-        processed_lines = processed_text.splitlines()  # Changed from split('\\n') to splitlines()
-        
-        # Truncate to first 9999 lines if needed
-        if len(processed_lines) > 9999:
-            st.warning("⚠️ Input contains more than 9999 lines. Displaying first 9999 lines only.")
-            processed_lines = processed_lines[:9999]
-            hex_data = hex_data[:9999] if hex_data else []
-
-        def fit_line(line_content_to_fit):
-            if len(line_content_to_fit) > max_line_length:
-                return line_content_to_fit[:max_line_length]
-            return line_content_to_fit.ljust(max_line_length)
-
-        st.markdown("#### 📝 Analysis Output")
-        
-        # Display each line with its own ruler for perfect alignment
-        for i, line_content in enumerate(processed_lines):
-            line_num = i + 1
-            fitted_line = fit_line(line_content)
-            
-            # Generate ruler specifically for this line length
-            line_length = len(fitted_line)
-            if line_length > 0:
-                # Create the ruler display content with perfectly aligned labels
-                # Account for line numbers up to 9999 (4 digits + "Line " + ":")
-                ruler_display = []
-                
-                # Position numbers (every 10th position)
-                ruler_numbers = generate_ruler(line_length)[0]
-                ruler_display.append(f"Pos:      {ruler_numbers}")
-                
-                # Ruler markers with colors
-                ruler_line = generate_ruler(line_length)[1]
-                ruler_display.append(f"Cols:     {ruler_line}")
-                
-                # The actual data line - format for up to 4-digit line numbers
-                line_label = f"Line {line_num}:"
-                line_label = line_label.ljust(10)  # "Line 9999:" = 10 characters
-                ruler_display.append(f"{line_label}{fitted_line}")
-                
-                # Hex data if available
-                if i < len(hex_data):
-                    hex_h, hex_l = hex_data[i]
-                    fitted_hex_h = fit_line(hex_h)
-                    fitted_hex_l = fit_line(hex_l)
-                    ruler_display.append(f"Hex H:    {fitted_hex_h}")
-                    ruler_display.append(f"Hex L:    {fitted_hex_l}")
-                
-                # Display this line's ruler and data together
-                line_content_display = "\n".join(ruler_display)
-                st.code(line_content_display, language=None)
-                
-                # Add some spacing between different lines
-                if i < len(processed_lines) - 1:
-                    st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Download section - positioned after the analysis output
-        st.markdown("---")  # Add a separator
-        st.markdown("#### 📥 Export Results")
-        
-        # Create output sections for download with improved alignment
-        output_sections = []
-        for i, line in enumerate(processed_lines):
-            line_num = i + 1
-            fitted_line = fit_line(line)
-            line_length = len(fitted_line)
-            
-            if line_length > 0:
-                # Generate ruler for this specific line
-                ruler_numbers, ruler_line = generate_ruler(line_length)
-                
-                # Use consistent 10-character labels for alignment (up to Line 9999:)
-                line_label = f"Line {line_num}:"
-                line_label = line_label.ljust(10)
-                
-                output_sections.append(f"=== Line {line_num} Analysis ===")
-                output_sections.append(f"Pos:      {ruler_numbers}")
-                output_sections.append(f"Cols:     {ruler_line}")
-                output_sections.append(f"{line_label}{fitted_line}")
-                
-                if i < len(hex_data):
-                    hex_h = fit_line(hex_data[i][0])
-                    hex_l = fit_line(hex_data[i][1])
-                    output_sections.append(f"Hex H:    {hex_h}")
-                    output_sections.append(f"Hex L:    {hex_l}")
-                
-                output_sections.append("")  # Empty line between sections
-        
-        download_lines = [
-            "=== TEXT ANALYZER REPORT ===",
-            f"Encoding Mode: {encoding_mode}",
-            f"Line Length: {max_line_length}",
-            f"Total Lines Analyzed: {len(processed_lines)}",
-            f"Total Characters: {len(text)}",
-            "" if len(processed_lines) <= 9999 else "NOTE: Analysis limited to first 9999 lines",
-            "",
-            "LEGEND:",
-            "Position Ruler: . = regular | + = every 5th | | = every 10th",
-            "Numbers show column positions (1-based indexing)",
-            "Special chars: · = Space | → = Tab | ¶ = Newline | ↴ = CR",
-            "Actual periods remain as '.' - Hex value 2E",
-            "Line numbers supported up to Line 9999:",
-            "",
-            "=== ANALYSIS OUTPUT ===",
-            ""
-        ] + output_sections
-        
-        download_content = '\n'.join(download_lines)
-        st.download_button(
-            "📥 Download Analysis Report",
-            download_content,
-            file_name=f"text_analysis_{encoding_mode.lower()}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
-    
-    elif not text and analyze_button:
-        st.warning("⚠️ Please enter some text to analyze.")
-    
-    else:
-        # Show ruler preview when no analysis is running
-        st.markdown('<div class="section-header">📏 Ruler Preview</div>', unsafe_allow_html=True)
-        ruler_numbers, ruler_line = generate_ruler(max_line_length)
-        st.code(f"{ruler_numbers}\n{ruler_line}", language=None)
-
-    # Professional styling for monospace elements
-    st.markdown("""
-    <style>
-    /* Remove all label and container related styles */
-    .stTextArea {
-        margin: 0 !important;
-        padding: 0 !important;
+    .metric-box:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
     }
-
-    /* Direct textarea styling */
+    
+    .metric-box strong {
+        color: #667eea;
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+    
+    /* Monospace font for input text areas with gradient border */
     .stTextArea textarea {
-        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Courier New', monospace !important;
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', 'Courier New', monospace !important;
         font-size: 14px !important;
-        line-height: 1.5 !important;
-        border-radius: 8px !important;
-        border: 2px solid #e0e0e0 !important;
-        padding: 12px !important;
-        margin: 0 !important;
-    }
-    
-    .stTextArea textarea:focus {
-        border-color: #1f77b4 !important;
-        box-shadow: 0 0 0 3px rgba(31, 119, 180, 0.1) !important;
-    }
-    
-    /* Code block styling */
-    .stCodeBlock {
-        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Courier New', monospace !important;
-    }
-    
-    .stCodeBlock > div {
-        background: #f8f9fa !important;
-        border: 1px solid #e9ecef !important;
-        border-radius: 8px !important;
-        max-height: 600px !important;
-        overflow: auto !important;
-    }
-    
-    .stCodeBlock code {
-        font-size: 13px !important;
         line-height: 1.4 !important;
-        white-space: pre !important;
-        overflow-x: auto !important;
-    }
-    
-    /* Button styling */
-    .stButton > button {
+        border: 2px solid transparent !important;
+        background: linear-gradient(white, white) padding-box, linear-gradient(135deg, #667eea, #764ba2) border-box !important;
         border-radius: 8px !important;
-        border: none !important;
-        font-weight: 500 !important;
         transition: all 0.3s ease !important;
     }
     
-    .stButton > button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;
+    .stTextArea textarea:focus {
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.3) !important;
+        transform: scale(1.01) !important;
     }
     
-    /* Download button */
-    .stDownloadButton > button {
-        background: linear-gradient(90deg, #28a745, #20c997) !important;
+    /* Enhanced sidebar styling */
+    .css-1d391kg {
+        background: linear-gradient(180deg, rgba(102, 126, 234, 0.05), rgba(240, 147, 251, 0.05));
+    }
+    
+    /* Button styling enhancements */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
+        border-radius: 10px !important;
+        padding: 12px 24px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+        transition: all 0.3s ease !important;
+        color: white !important;
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4) !important;
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
+    }
+    
+    /* Sidebar buttons */
+    .stButton > button:not([kind="primary"]) {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(240, 147, 251, 0.1)) !important;
+        border: 1px solid rgba(102, 126, 234, 0.3) !important;
+        border-radius: 8px !important;
+        color: #667eea !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stButton > button:not([kind="primary"]):hover {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(240, 147, 251, 0.2)) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+    }
+    
+    /* Clear button special styling */
+    .stButton > button:has-text("🗑️ Clear All") {
+        background: linear-gradient(135deg, #ff6b6b, #ee5a52) !important;
         color: white !important;
         border: none !important;
+    }
+    
+    .stButton > button:has-text("🗑️ Clear All"):hover {
+        background: linear-gradient(135deg, #ee5a52, #ff6b6b) !important;
+    }
+    
+    /* Download button styling */
+    .stDownloadButton > button {
+        background: linear-gradient(135deg, #51cf66, #40c057) !important;
+        border: none !important;
         border-radius: 8px !important;
+        color: white !important;
         font-weight: 600 !important;
-        padding: 12px 24px !important;
+        transition: all 0.3s ease !important;
     }
     
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: #f8f9fa !important;
+    .stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #40c057, #51cf66) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(64, 192, 87, 0.3) !important;
     }
     
-    /* Main container */
-    .main .block-container {
-        padding: 2rem 1rem !important;
-        max-width: 100% !important;
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
     }
     
-    /* Enhanced ruler and column highlighting */
-    .stColumns > div:first-child {
-        background: linear-gradient(135deg, #f0f8ff, #e8f4f8) !important;
-        border-radius: 10px !important;
-        padding: 15px !important;
-        border: 2px solid #1976d2 !important;
-        position: sticky !important;
-        top: 20px !important;
-        height: fit-content !important;
+    .stTabs [data-baseweb="tab"] {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(240, 147, 251, 0.1));
+        border-radius: 8px;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+        color: #667eea;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        min-width: 200px;
+        text-align: center;
+        padding: 8px 16px;
     }
     
-    /* Content column styling */
-    .stColumns > div:last-child {
-        padding-left: 20px !important;
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea, #764ba2) !important;
+        color: white !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
     
-    /* Code block styling with enhanced visibility */
-    .stCodeBlock {
-        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Courier New', monospace !important;
+    /* Footer enhancements */
+    .footer-tip {
+        text-align: center;
+        padding: 15px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(240, 147, 251, 0.05));
+        border-radius: 10px;
+        border: 1px solid rgba(102, 126, 234, 0.1);
+        margin-top: 20px;
+        color: #667eea;
+        font-style: italic;
     }
     
-    .stCodeBlock > div {
-        background: #f8f9fa !important;
-        border: 1px solid #e9ecef !important;
-        border-radius: 8px !important;
-        max-height: 500px !important;
-        overflow: auto !important;
+    /* Selectbox styling */
+    .stSelectbox > div > div {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
+        border: 1px solid rgba(102, 126, 234, 0.3);
+        border-radius: 8px;
     }
     
-    .stCodeBlock code {
-        font-size: 13px !important;
-        line-height: 1.4 !important;
-        white-space: pre !important;
-        overflow-x: auto !important;
+    /* Animation for page load */
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
     
-    /* Ruler column code block special styling */
-    .stColumns > div:first-child .stCodeBlock > div {
-        background: linear-gradient(to bottom, #f0f8ff, #e8f4f8) !important;
-        border: 2px solid #1976d2 !important;
-        max-height: 150px !important;
-    }
-    
-    .stColumns > div:first-child .stCodeBlock code {
-        color: #1976d2 !important;
-        font-weight: 600 !important;
+    .main {
+        animation: fadeInUp 0.6s ease-out;
     }
     </style>
     """, unsafe_allow_html=True)
+    
+    st.markdown('<h1 class="main-title">🔧 Hexpad Utility</h1>', unsafe_allow_html=True)
+    
+    # Sidebar configuration
+    with st.sidebar:
+        st.markdown("### ⚙️ Configuration")
+        
+        encoding = st.selectbox(
+            "Character Encoding",
+            ["CP037 (EBCDIC)", "UTF-8", "ASCII", "CP1252 (Windows)", "ISO-8859-1 (Latin-1)"],
+            help="Choose the character encoding for conversion"
+        )
+        
+        bytes_per_line = st.selectbox(
+            "Bytes per line",
+            [8, 16, 32],
+            index=1,
+            help="Number of bytes to display per line"
+        )
+        
+        # Sample data button
+        if st.button("📝 Load Sample", use_container_width=True):
+            # Generate sample hex based on current encoding
+            encoding_map = {
+                'cp037 (ebcdic)': 'cp037',
+                'utf-8': 'utf-8',
+                'ascii': 'ascii',
+                'cp1252 (windows)': 'cp1252',
+                'iso-8859-1 (latin-1)': 'iso-8859-1'
+            }
+            try:
+                enc = encoding_map.get(encoding.lower(), encoding.lower())
+                sample_bytes = SAMPLE_TEXT.encode(enc)
+                sample_hex = ''.join(f'{b:02x}' for b in sample_bytes)
+            except:
+                sample_bytes = SAMPLE_TEXT.encode('utf-8', errors='replace')
+                sample_hex = ''.join(f'{b:02x}' for b in sample_bytes)
+            
+            st.session_state["input_text"] = SAMPLE_TEXT
+            st.session_state["hex_input"] = sample_hex
+        
+        # Clear button
+        if st.button("🗑️ Clear All", use_container_width=True, help="Clear all input and output areas"):
+            # Clear session state for both tabs by setting to empty strings
+            st.session_state["input_text"] = ""
+            st.session_state["hex_input"] = ""
+            st.rerun()
+        
+        st.markdown("### 📖 Format Info")
+        st.markdown("""
+        **Hexdump Format:**
+        ```
+        offset   xx xx xx xx xx xx xx xx  |xxxxxxxx|
+        ```
+        - `offset`: decimal offset (0, 16, 32, ...)
+        - `xx xx`: hex bytes with spaces
+        - `|xxxxxxxx|`: ASCII representation
+        """)
+    
+    # Main tabs
+    tab1, tab2 = st.tabs(["📝 Text → Hexdump Conversion", "🔄 Hex → Text Conversion"])
+    
+    with tab1:
+        st.markdown('<div class="section-header">📝 Text to Hexdump Conversion</div>', unsafe_allow_html=True)
+        
+        input_text = st.text_area(
+            "Input Text",
+            height=200,
+            key="input_text",
+            placeholder="Enter text to convert to hexdump format...",
+            help="Enter any text to see its hexdump representation"
+        )
+        
+        # Convert button
+        convert_button = st.button("🔍 Generate Hexdump", type="primary", use_container_width=True)
+        
+        if convert_button and input_text:
+            # Show metrics
+            try:
+                encoding_map = {
+                    'cp037 (ebcdic)': 'cp037',
+                    'utf-8': 'utf-8',
+                    'ascii': 'ascii',
+                    'cp1252 (windows)': 'cp1252',
+                    'iso-8859-1 (latin-1)': 'iso-8859-1'
+                }
+                enc = encoding_map.get(encoding.lower(), encoding.lower())
+                byte_count = len(input_text.encode(enc))
+            except:
+                byte_count = len(input_text.encode('utf-8', errors='replace'))
+            
+            st.markdown(f"""
+            <div class="metrics-container">
+                <div class="metric-box">
+                    <strong>{byte_count}</strong><br>Bytes
+                </div>
+                <div class="metric-box">
+                    <strong>{encoding}</strong><br>Encoding
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Generate hexdump
+            hexdump_output = text_to_hexdump(input_text, encoding.lower(), bytes_per_line)
+            
+            st.markdown("#### 🔍 Hexdump Output")
+            st.markdown(f'<div class="hexdump-output">{hexdump_output}</div>', unsafe_allow_html=True)
+            
+            # Download button
+            st.download_button(
+                "📥 Download Hexdump",
+                hexdump_output,
+                file_name=f"hexdump_{encoding.lower()}.txt",
+                mime="text/plain"
+            )
+    
+    with tab2:
+        st.markdown('<div class="section-header">🔄 Hex to Text Conversion</div>', unsafe_allow_html=True)
+        
+        hex_input = st.text_area(
+            "Hex Input",
+            height=150,
+            key="hex_input",
+            placeholder="Enter hex bytes (e.g., 48656c6c6f20576f726c64 or 48 65 6c 6c 6f)...",
+            help="Enter hex bytes separated by spaces or as continuous string"
+        )
+        
+        # Convert button
+        convert_button2 = st.button("🔄 Convert to Text", type="primary", use_container_width=True)
+        
+        if convert_button2 and hex_input.strip():
+            result = hex_to_text(hex_input, encoding.lower())
+            
+            if result.startswith("Error:"):
+                st.error(result)
+            else:
+                # Show metrics for the converted result
+                try:
+                    encoding_map = {
+                        'cp037 (ebcdic)': 'cp037',
+                        'utf-8': 'utf-8',
+                        'ascii': 'ascii',
+                        'cp1252 (windows)': 'cp1252',
+                        'iso-8859-1 (latin-1)': 'iso-8859-1'
+                    }
+                    enc = encoding_map.get(encoding.lower(), encoding.lower())
+                    byte_count = len(result.encode(enc))
+                except:
+                    byte_count = len(result.encode('utf-8', errors='replace'))
+                
+                st.markdown(f"""
+                <div class="metrics-container">
+                    <div class="metric-box">
+                        <strong>{byte_count}</strong><br>Bytes
+                    </div>
+                    <div class="metric-box">
+                        <strong>{encoding}</strong><br>Encoding
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Show hexdump of result for verification
+                hexdump_verification = text_to_hexdump(result, encoding.lower(), bytes_per_line)
+                
+                st.markdown("#### ✅ Converted Text as Hexdump")
+                st.markdown(f'<div class="hexdump-output">{hexdump_verification}</div>', unsafe_allow_html=True)
+                
+                # Download button
+                st.download_button(
+                    "📥 Download Text",
+                    result,
+                    file_name=f"converted_text_{encoding.lower()}.txt",
+                    mime="text/plain"
+                )
+    
+    # Footer
+    st.markdown("---")
+    st.markdown('<div class="footer-tip">💡 <strong>Tip:</strong> This tool mimics the Linux <code>hexdump -C</code> command functionality with enhanced visual styling.</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

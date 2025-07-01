@@ -1,20 +1,22 @@
-# HexPad - Text Analyzer & Hex Inspector
+# HexPad - Hexdump Utility
 
-A powerful Streamlit-based web application for analyzing text and viewing its hexadecimal representation. Perfect for debugging text encoding issues, inspecting special characters, and understanding data at the byte level.
+A powerful Streamlit-based web application that mimics the Linux `hexdump -C` command functionality with enhanced visual styling. Perfect for converting text to hexdump format and vice versa, with support for multiple character encodings.
 
 ## 🚀 Features
 
-- **Text Analysis**: Visualize text with special character representation
-- **Hex Inspection**: View hexadecimal representation of text in both ASCII and EBCDIC encoding
-- **Character Ruler**: Precise position tracking with configurable line lengths
-- **Special Character Visualization**:
-  - `·` for spaces
-  - `→` for tabs  
-  - `¶` for newlines
-  - `↴` for carriage returns
-  - Unicode symbols for control characters
-- **Export Functionality**: Download analysis reports as text files
-- **Responsive Design**: Clean, professional interface with real-time metrics
+- **Text to Hexdump Conversion**: Convert any text to hexdump format with proper offset, hex bytes, and ASCII representation
+- **Hex to Text Conversion**: Convert hex strings back to readable text
+- **Multiple Encoding Support**: 
+  - CP037 (EBCDIC) - IBM mainframe encoding
+  - UTF-8 - Universal character encoding
+  - ASCII - Basic ASCII encoding
+  - CP1252 (Windows) - Windows character encoding
+  - ISO-8859-1 (Latin-1) - Western European encoding
+- **Configurable Display**: Choose 8, 16, or 32 bytes per line
+- **Professional Hexdump Format**: Mimics Linux `hexdump -C` with decimal offsets and ASCII sidebar
+- **Visual Enhancements**: Modern UI with gradient styling and animations
+- **Export Functionality**: Download hexdump outputs and converted text files
+- **Sample Data**: Built-in test data for quick experimentation
 
 ## 📋 Requirements
 
@@ -49,57 +51,77 @@ A powerful Streamlit-based web application for analyzing text and viewing its he
 
 2. Open your browser and navigate to `http://localhost:8501`
 
-3. **Basic Workflow**:
+3. **Text to Hexdump Workflow**:
+   - Switch to the "📝 Text → Hexdump Conversion" tab
    - Enter or paste text in the input area
-   - Configure line length and encoding mode in the sidebar
-   - Click "🔍 Analyze Text" to see results
-   - Use the ruler for precise character positioning
-   - Download analysis reports for offline review
+   - Configure encoding and bytes per line in the sidebar
+   - Click "🔍 Generate Hexdump" to see the hexdump output
+   - Download the hexdump file for offline use
+
+4. **Hex to Text Workflow**:
+   - Switch to the "🔄 Hex → Text Conversion" tab
+   - Enter hex bytes (with or without spaces)
+   - Choose the appropriate encoding in the sidebar
+   - Click "🔄 Convert to Text" to see the converted text
+   - Download the converted text file
 
 ## 🎯 Use Cases
 
-- **Text Encoding Debugging**: Identify encoding issues and special characters
-- **Data Analysis**: Inspect binary data representation in text form
-- **File Format Analysis**: Understanding file headers and structured data
-- **Legacy System Integration**: Working with EBCDIC-encoded mainframe data
-- **Educational Tool**: Learning about character encoding and hex representation
+- **Binary Data Analysis**: Inspect file contents and binary data structures
+- **Text Encoding Debugging**: Understand how text appears in different encodings
+- **Legacy System Integration**: Work with EBCDIC data from mainframe systems
+- **File Format Analysis**: Examine file headers and binary formats
+- **Educational Tool**: Learn about hexadecimal representation and character encodings
+- **Data Recovery**: Convert hex dumps back to readable text
 
 ## 🔧 Configuration Options
 
-- **Line Length**: Adjustable from 40 to 500 characters (default: 140)
-- **Encoding Mode**: ASCII or EBCDIC support
-- **Export Formats**: Plain text analysis reports
+- **Character Encoding**: Choose from CP037 (EBCDIC), UTF-8, ASCII, CP1252 (Windows), or ISO-8859-1 (Latin-1)
+- **Bytes per Line**: Display 8, 16, or 32 bytes per line (default: 16)
+- **Sample Data**: Load built-in test data for quick experimentation
+- **Clear Function**: Reset all input and output areas
 
-## 📝 Sample Data
+## 📝 Hexdump Format
 
-The application includes sample data with common characters for quick testing:
+The application produces hexdump output in the standard format:
 ```
-1234567890-=qwertyuiop[]\asdfghjkl;'zxcvbnm,./~!@#$%^&*()_+{}|:"<>?QWERTYUIOPASDFGHJKLZXCVBNM
+offset   xx xx xx xx xx xx xx xx  |xxxxxxxx|
+0        48 65 6c 6c 6f 20 57 6f  |Hello Wo|
+8        72 6c 64 21              |rld!    |
 ```
+
+- **offset**: Decimal byte offset (0, 16, 32, ...)
+- **xx xx**: Hexadecimal bytes with spaces every 4 bytes
+- **|xxxxxxxx|**: ASCII representation with non-printable characters as dots
 
 ## 🎨 Interface Features
 
-- **Professional Styling**: Modern, clean interface with gradient headers
-- **Responsive Layout**: Optimized for both desktop and mobile viewing
-- **Real-time Metrics**: Live character and line counts
-- **Sticky Ruler**: Always-visible position reference
-- **Scrollable Output**: Efficient handling of large text analysis
+- **Modern UI Design**: Gradient styling with professional color schemes
+- **Responsive Layout**: Optimized for desktop and mobile viewing
+- **Tabbed Interface**: Separate tabs for text-to-hex and hex-to-text conversion
+- **Real-time Metrics**: Live byte counts and encoding information
+- **Animated Elements**: Smooth transitions and hover effects
+- **Monospace Fonts**: Proper display of hexdump output with fixed-width fonts
 
-## 🔍 Analysis Output
+## 🔍 Output Features
 
-The tool provides comprehensive analysis including:
+**Text to Hexdump Conversion:**
+1. **Hexdump Display**: Linux `hexdump -C` compatible format
+2. **Byte Metrics**: Real-time byte count and encoding information
+3. **Download Option**: Export hexdump as text file
 
-1. **Character Position Ruler**: 1-based positioning with visual markers
-2. **Processed Text**: Special characters replaced with visible symbols
-3. **Hex Representation**: Upper and lower nibbles displayed separately
-4. **Line-by-line Breakdown**: Detailed analysis for each line of input
+**Hex to Text Conversion:**
+1. **Text Output**: Converted readable text
+2. **Verification Hexdump**: Shows hexdump of converted text for verification
+3. **Error Handling**: Clear error messages for invalid hex input
+4. **Download Option**: Export converted text as file
 
 ## 📊 Export Features
 
-- **Comprehensive Reports**: Complete analysis with metadata
-- **Formatted Output**: Structured text files with clear sections
-- **Custom Filenames**: Automatic naming based on encoding mode
-- **Legend Included**: Symbol explanations in every export
+- **Hexdump Files**: Save hexdump output with encoding-specific filenames
+- **Text Files**: Export converted text with proper encoding
+- **Automatic Naming**: Files named with encoding information
+- **Multiple Formats**: Support for various character encodings
 
 ## 🤝 Contributing
 
@@ -113,10 +135,18 @@ This project is open source and available under the [MIT License](LICENSE).
 
 For deployment on Streamlit Cloud or other platforms:
 
-1. Ensure `requirements.txt` includes all dependencies
+1. Ensure `requirements.txt` includes all dependencies (streamlit)
 2. The main application file is `hexpad.py`
 3. No additional configuration files needed
+4. Set Python version to 3.7+ for compatibility
+
+## 💡 Technical Details
+
+- **EBCDIC Support**: Full CP037 character mapping for mainframe compatibility
+- **Unicode Handling**: Proper UTF-8 encoding with error handling
+- **Memory Efficient**: Processes large text inputs without performance issues
+- **Cross-Platform**: Works on Windows, macOS, and Linux
 
 ---
 
-**Happy Analyzing!** 🔍✨
+**Happy Hex Dumping!** 🔍✨
